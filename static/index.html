@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Autonomous Deep Learning Framework</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0b0d12;
+    --panel: #12151c;
+    --panel2: #171b24;
+    --border: #262b36;
+    --text: #e6e9ef;
+    --muted: #8b93a3;
+    --accent: #6ee7b7;
+    --accent2: #60a5fa;
+    --warn: #fbbf24;
+    --danger: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 40px 20px 80px; }
+  h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 4px; }
+  .sub { color: var(--muted); margin-bottom: 28px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; padding: 24px; margin-bottom: 20px;
+  }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  label { font-size: 0.85rem; color: var(--muted); display:block; margin-bottom:6px; }
+  select, input[type=file] {
+    background: var(--panel2); border: 1px solid var(--border); color: var(--text);
+    padding: 10px 12px; border-radius: 8px; font-size: 0.95rem; width: 100%;
+  }
+  .radio-group { display: flex; gap: 20px; margin-top: 4px; }
+  .radio-group label { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 0.95rem; cursor: pointer; }
+  button {
+    background: linear-gradient(135deg, var(--accent2), var(--accent));
+    color: #0b0d12; border: none; font-weight: 700; padding: 13px 22px;
+    border-radius: 10px; font-size: 1rem; cursor: pointer; width: 100%; margin-top: 10px;
+  }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .field { flex: 1; min-width: 220px; margin-bottom: 14px; }
+  .phase-title { font-size: 1.05rem; font-weight: 700; margin-bottom: 10px; display:flex; align-items:center; gap:8px;}
+  .phase-title .status-dot { width:10px; height:10px; border-radius:50%; background: var(--muted); }
+  .phase-title.active .status-dot { background: var(--accent2); box-shadow: 0 0 8px var(--accent2); }
+  .phase-title.done .status-dot { background: var(--accent); }
+  .line { font-family: 'Cascadia Code', Consolas, monospace; font-size: 0.9rem; color: var(--text); margin: 4px 0; }
+  .muted { color: var(--muted); }
+  .progress-bar { height: 10px; background: var(--panel2); border-radius: 6px; overflow: hidden; margin: 8px 0; border:1px solid var(--border);}
+  .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent2), var(--accent)); transition: width 0.3s ease; }
+  .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top:8px;}
+  .stat { background: var(--panel2); border:1px solid var(--border); border-radius: 8px; padding: 10px 14px; }
+  .stat .k { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: .04em;}
+  .stat .v { font-size: 1.1rem; font-weight: 700; margin-top:2px;}
+  .arch-item { display:flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 0.9rem;}
+  .arch-item:last-child { border-bottom:none;}
+  .warn-banner {
+    background: rgba(251, 191, 36, 0.12); border: 1px solid var(--warn); color: var(--warn);
+    padding: 10px 14px; border-radius: 8px; margin: 8px 0; font-size: 0.88rem;
+  }
+  .hidden { display:none; }
+  a.dl { display:inline-block; background: var(--panel2); border:1px solid var(--border); color: var(--text);
+    padding: 12px 16px; border-radius:8px; text-decoration:none; margin-right:10px; margin-top:8px; font-weight:600;}
+  a.dl:hover { border-color: var(--accent2); }
+  #epochScroll { max-height: 220px; overflow-y: auto; padding-right: 4px; }
+  #trialScroll { max-height: 220px; overflow-y: auto; padding-right: 4px; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Autonomous Deep Learning Framework</h1>
+  <div class="sub">Upload a dataset. Everything after that — data prep, architecture search, tuning, training, compression — runs on its own.</div>
+
+  <!-- STEP 1: Homepage / config -->
+  <div class="card" id="setupCard">
+    <div class="field">
+      <label>Dataset (CSV)</label>
+      <input type="file" id="fileInput" accept=".csv">
+    </div>
+    <div class="field">
+      <label>Task Type</label>
+      <div class="radio-group">
+        <label><input type="radio" name="taskType" value="classification" checked> Classification</label>
+        <label><input type="radio" name="taskType" value="regression"> Regression</label>
+      </div>
+    </div>
+    <div class="field">
+      <label>Target Column</label>
+      <select id="targetSelect" disabled><option>Upload a CSV first</option></select>
+    </div>
+    <button id="startBtn" disabled>Start AutoML</button>
+  </div>
+
+  <!-- PIPELINE STEPS (hidden until started) -->
+  <div id="pipeline" class="hidden">
+
+    <div class="card" id="p1Card">
+      <div class="phase-title" id="p1Title"><span class="status-dot"></span> Phase 1 · Data Understanding</div>
+      <div id="p1Body"><div class="line muted">Waiting...</div></div>
+    </div>
+
+    <div class="card" id="p2Card">
+      <div class="phase-title" id="p2Title"><span class="status-dot"></span> Phase 2 · Architecture Search (NAS)</div>
+      <div id="p2Body"><div class="line muted">Waiting...</div></div>
+    </div>
+
+    <div class="card" id="p3Card">
+      <div class="phase-title" id="p3Title"><span class="status-dot"></span> Phase 3 · Hyperparameter Optimization</div>
+      <div id="p3Body"><div class="line muted">Waiting...</div></div>
+    </div>
+
+    <div class="card" id="p4Card">
+      <div class="phase-title" id="p4Title"><span class="status-dot"></span> Phase 4 · Training</div>
+      <div id="p4Body"><div class="line muted">Waiting...</div></div>
+    </div>
+
+    <div class="card" id="p5Card">
+      <div class="phase-title" id="p5Title"><span class="status-dot"></span> Phase 5 · Compression &amp; Export</div>
+      <div id="p5Body"><div class="line muted">Waiting...</div></div>
+    </div>
+
+    <div class="card hidden" id="dashCard">
+      <div class="phase-title done"><span class="status-dot"></span> Final Dashboard</div>
+      <div id="dashBody"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+let uploadedPath = null, uploadedJobId = null;
+
+const fileInput = document.getElementById('fileInput');
+const targetSelect = document.getElementById('targetSelect');
+const startBtn = document.getElementById('startBtn');
+
+fileInput.addEventListener('change', async () => {
+  if (!fileInput.files.length) return;
+  const fd = new FormData();
+  fd.append('file', fileInput.files[0]);
+  targetSelect.disabled = true;
+  targetSelect.innerHTML = '<option>Uploading...</option>';
+  const res = await fetch('/api/upload', { method: 'POST', body: fd });
+  const data = await res.json();
+  uploadedPath = data.path;
+  uploadedJobId = data.job_id;
+  targetSelect.innerHTML = data.columns.map(c => `<option value="${c}">${c}</option>`).join('');
+  // default target = last column, common convention
+  targetSelect.value = data.columns[data.columns.length - 1];
+  targetSelect.disabled = false;
+  startBtn.disabled = false;
+});
+
+function taskType() {
+  return document.querySelector('input[name=taskType]:checked').value;
+}
+
+function setPhaseActive(n) {
+  document.getElementById(`p${n}Title`).classList.add('active');
+}
+function setPhaseDone(n) {
+  document.getElementById(`p${n}Title`).classList.remove('active');
+  document.getElementById(`p${n}Title`).classList.add('done');
+}
+function bar(pct) {
+  return `<div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>`;
+}
+
+startBtn.addEventListener('click', () => {
+  if (!uploadedPath) return;
+  startBtn.disabled = true;
+  document.getElementById('pipeline').classList.remove('hidden');
+  document.getElementById('setupCard').classList.add('hidden');
+
+  const ws = new WebSocket(`ws://${location.host}/ws/run`);
+  ws.onopen = () => {
+    ws.send(JSON.stringify({
+      path: uploadedPath,
+      job_id: uploadedJobId,
+      task_type: taskType(),
+      target_col: targetSelect.value,
+    }));
+    setPhaseActive(1);
+  };
+  ws.onmessage = (msg) => handleEvent(JSON.parse(msg.data));
+  ws.onerror = () => {
+    document.getElementById('p1Body').innerHTML = '<div class="line" style="color:var(--danger)">Connection error.</div>';
+  };
+});
+
+function handleEvent(e) {
+  if (e.phase === 'phase1') handlePhase1(e);
+  else if (e.phase === 'phase2') handlePhase2(e);
+  else if (e.phase === 'phase3') handlePhase3(e);
+  else if (e.phase === 'phase4') handlePhase4(e);
+  else if (e.phase === 'phase5') handlePhase5(e);
+  else if (e.phase === 'pipeline') handlePipeline(e);
+}
+
+// ---------- Phase 1 ----------
+function handlePhase1(e) {
+  const body = document.getElementById('p1Body');
+  if (e.status === 'running') {
+    body.innerHTML = `<div class="line">✓ ${e.message}</div>`;
+  } else if (e.status === 'stats') {
+    let balanceHtml = '';
+    if (e.class_balance) {
+      const parts = Object.entries(e.class_balance).map(([k, v]) => `${v}%`).join(' / ');
+      balanceHtml = `<div class="stat"><div class="k">Class Balance</div><div class="v">${parts}</div></div>`;
+    }
+    body.innerHTML = `
+      <div class="grid2">
+        <div class="stat"><div class="k">Rows</div><div class="v">${e.rows}</div></div>
+        <div class="stat"><div class="k">Features</div><div class="v">${e.features}</div></div>
+        <div class="stat"><div class="k">Target</div><div class="v">${e.target}</div></div>
+        ${balanceHtml}
+      </div>`;
+  } else if (e.status === 'augmenting') {
+    body.innerHTML += `<div class="line" style="color:var(--accent2)">⟳ ${e.message}</div>`;
+  } else if (e.status === 'done') {
+    body.innerHTML += `<div class="line" style="color:var(--accent)">✓ Dataset ready — ${e.final_rows} rows${e.synthetic_added ? ` (+${e.synthetic_added} synthetic)` : ''}.</div>`;
+    setPhaseDone(1); setPhaseActive(2);
+  }
+}
+
+// ---------- Phase 2 ----------
+let nasCandidates = 0, nasTotal = 6;
+function handlePhase2(e) {
+  const body = document.getElementById('p2Body');
+  if (e.status === 'running') {
+    nasTotal = e.total;
+    body.innerHTML = `<div class="line">Searching architectures...</div>${bar(0)}<div id="archList"></div>`;
+  } else if (e.status === 'candidate') {
+    nasCandidates = e.index;
+    document.querySelector('#p2Body .progress-fill').style.width = `${Math.round(100 * e.index / e.total)}%`;
+    const acc = e.accuracy !== null ? `${e.accuracy}%` : e.score;
+    document.getElementById('archList').innerHTML += `<div class="arch-item"><span>Architecture #${e.index} (${e.architecture})</span><span>${acc}</span></div>`;
+  } else if (e.status === 'done') {
+    const a = e.best_architecture;
+    body.innerHTML += `
+      <div class="line" style="color:var(--accent); margin-top:10px;">✓ Best Architecture Found</div>
+      <div class="grid2">
+        <div class="stat"><div class="k">Layers</div><div class="v">${a.layers.length}</div></div>
+        <div class="stat"><div class="k">Units</div><div class="v">${a.layers.join('-')}</div></div>
+        <div class="stat"><div class="k">Activation</div><div class="v">${a.activation.toUpperCase()}</div></div>
+        <div class="stat"><div class="k">Dropout</div><div class="v">${a.dropout}</div></div>
+      </div>`;
+    setPhaseDone(2); setPhaseActive(3);
+  }
+}
+
+// ---------- Phase 3 ----------
+function handlePhase3(e) {
+  const body = document.getElementById('p3Body');
+  if (e.status === 'running') {
+    body.innerHTML = `<div class="line">Starting hyperparameter optimization...</div>${bar(0)}<div id="trialScroll"></div>`;
+  } else if (e.status === 'trial') {
+    document.querySelector('#p3Body .progress-fill').style.width = `${Math.round(100 * e.trial / e.total)}%`;
+    const acc = e.accuracy !== null ? `${e.accuracy}%` : e.score;
+    document.getElementById('trialScroll').innerHTML += `<div class="line">Trial ${e.trial} — LR = ${e.lr}, dropout = ${e.dropout} → Accuracy = ${acc}</div>`;
+    document.getElementById('trialScroll').scrollTop = document.getElementById('trialScroll').scrollHeight;
+  } else if (e.status === 'done') {
+    const b = e.best_trial;
+    const acc = b.accuracy !== undefined && b.accuracy !== null ? `${b.accuracy}%` : b.score;
+    body.innerHTML += `<div class="line" style="color:var(--accent); margin-top:10px;">✓ ${e.message}</div>
+      <div class="grid2">
+        <div class="stat"><div class="k">Best Validation Accuracy</div><div class="v">${acc}</div></div>
+        <div class="stat"><div class="k">Best LR</div><div class="v">${b.lr}</div></div>
+      </div>`;
+    setPhaseDone(3); setPhaseActive(4);
+  }
+}
+
+// ---------- Phase 4 ----------
+function handlePhase4(e) {
+  const body = document.getElementById('p4Body');
+  if (e.status === 'running') {
+    body.innerHTML = `${bar(0)}<div id="epochScroll"></div>`;
+  } else if (e.status === 'epoch') {
+    document.querySelector('#p4Body .progress-fill').style.width = `${Math.round(100 * e.epoch / e.total_epochs)}%`;
+    const accLine = e.train_acc !== null
+      ? `Accuracy ${e.train_acc}% (train) / ${e.val_acc}% (val)`
+      : `Val Loss ${e.val_loss}`;
+    document.getElementById('epochScroll').innerHTML += `<div class="line">Epoch ${e.epoch}/${e.total_epochs} — Loss ${e.train_loss} · ${accLine}</div>`;
+    document.getElementById('epochScroll').scrollTop = document.getElementById('epochScroll').scrollHeight;
+  } else if (e.status === 'overfitting_detected') {
+    document.getElementById('epochScroll').innerHTML += `<div class="warn-banner">⚠ Overfitting Detected (epoch ${e.epoch}) — increasing dropout to ${e.new_dropout}, reducing LR to ${e.new_lr}</div>`;
+    document.getElementById('epochScroll').scrollTop = document.getElementById('epochScroll').scrollHeight;
+  } else if (e.status === 'done') {
+    const accStr = e.final_val_acc !== null ? `${e.final_val_acc}%` : e.final_val_loss;
+    body.innerHTML += `<div class="line" style="color:var(--accent); margin-top:10px;">✓ Training complete — best checkpoint restored from epoch ${e.best_epoch} (final validation ${e.final_val_acc !== null ? 'accuracy' : 'loss'}: ${accStr})</div>`;
+    setPhaseDone(4); setPhaseActive(5);
+  }
+}
+
+// ---------- Phase 5 ----------
+function handlePhase5(e) {
+  const body = document.getElementById('p5Body');
+  const stepLabels = { pruning: 'Pruning', distillation: 'Knowledge Distillation', quantization: 'Quantization', export: 'Exporting ONNX' };
+  if (e.status === 'running' && e.step === 'pruning' && !document.getElementById('compressSteps')) {
+    body.innerHTML = `<div id="compressSteps"></div>`;
+  }
+  if (e.step && stepLabels[e.step]) {
+    const stepsDiv = document.getElementById('compressSteps');
+    const existing = document.getElementById(`step-${e.step}`);
+    const label = stepLabels[e.step];
+    if (e.status === 'running' && !existing) {
+      stepsDiv.innerHTML += `<div class="line" id="step-${e.step}">${label}... ${bar(40)}</div>`;
+    } else if (e.status === 'step_done') {
+      const el = document.getElementById(`step-${e.step}`);
+      if (el) el.innerHTML = `${label} ✓${bar(100)}`;
+    }
+  }
+  if (e.status === 'done') {
+    body.innerHTML += `
+      <div class="line" style="color:var(--accent); margin-top:10px;">✓ Compression Complete</div>
+      <div class="grid2">
+        <div class="stat"><div class="k">Model Size</div><div class="v">${e.original_size_mb} MB → ${e.compressed_size_mb} MB</div></div>
+        <div class="stat"><div class="k">Accuracy Loss</div><div class="v">${e.accuracy_loss}${typeof e.accuracy_loss === 'number' && e.accuracy_loss < 1 ? '' : '%'}</div></div>
+      </div>`;
+    setPhaseDone(5);
+  }
+}
+
+// ---------- Final dashboard ----------
+function handlePipeline(e) {
+  if (e.status === 'error') {
+    alert('Pipeline error: ' + e.message);
+    return;
+  }
+  if (e.status !== 'complete') return;
+  const r = e.report;
+  const dash = document.getElementById('dashCard');
+  dash.classList.remove('hidden');
+  document.getElementById('dashBody').innerHTML = `
+    <div class="line">Total time: ${r.elapsed_seconds}s</div>
+    <div class="grid2" style="margin-top:10px;">
+      <div class="stat"><div class="k">Best Architecture</div><div class="v">${r.nas.best_architecture.layers.join('-')}</div></div>
+      <div class="stat"><div class="k">Best LR</div><div class="v">${r.hpo.best_hparams.lr}</div></div>
+      <div class="stat"><div class="k">Final Val Accuracy</div><div class="v">${r.training.final_val_acc !== null ? r.training.final_val_acc + '%' : r.training.final_val_loss}</div></div>
+      <div class="stat"><div class="k">Compression</div><div class="v">${r.compression.original_size_mb}MB → ${r.compression.compressed_size_mb}MB</div></div>
+    </div>
+    <div style="margin-top:14px;">
+      <a class="dl" href="${e.onnx_url}">⬇ Download ONNX</a>
+      <a class="dl" href="${e.report_url}">⬇ Download Report</a>
+      <a class="dl" href="${e.notebook_url}">⬇ Download Notebook (.ipynb)</a>
+    </div>`;
+}
+</script>
+</body>
+</html>
