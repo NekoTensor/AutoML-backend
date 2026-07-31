@@ -61,16 +61,16 @@ async def upload_csv(file: UploadFile = File(...)):
     with open(dest_path, "wb") as f:
         f.write(await file.read())
 
-    df = pd.read_csv(dest_path)
+  df = pd.read_csv(dest_path)
+    preview_records = df.head(5).astype(object).where(pd.notnull(df.head(5)), None).to_dict(orient="records")
     return JSONResponse({
         "job_id": job_id,
         "filename": file.filename,
         "path": dest_path,
         "columns": list(df.columns),
         "rows": len(df),
-        "preview": df.head(5).to_dict(orient="records"),
+        "preview": preview_records,
     })
-
 
 @app.websocket("/ws/run")
 async def ws_run(websocket: WebSocket):
