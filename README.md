@@ -10,7 +10,7 @@ pinned: false
 
 <div align="center">
 
-# 🐱 NekoCortex — Backend
+# 👾 NekoCortex — Backend 🌿
 
 ### The actual AutoML pipeline: FastAPI + PyTorch, streamed live over WebSocket
 
