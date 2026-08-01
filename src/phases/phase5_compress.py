@@ -120,12 +120,17 @@ def run(prepared: dict, nas_result: dict, train_result: dict, output_dir: str, j
     onnx_path = os.path.join(output_dir, f"{job_id}_model.onnx")
     dummy_input = torch.randn(1, train_result["input_dim"])
     student.eval()
-    torch.onnx.export(
-        student, dummy_input, onnx_path,
-        input_names=["input"], output_names=["output"],
-        dynamic_axes={"input": {0: "batch_size"}, "output": {0: "batch_size"}},
-        opset_version=13,
-    )
+    with torch.no_grad():
+        torch.onnx.export(
+            student, dummy_input, onnx_path,
+            input_names=["input"], output_names=["output"],
+            dynamic_axes={"input": {0: "batch_size"}, "output": {0: "batch_size"}},
+            opset_version=13,
+            dynamo=False,  # force legacy TorchScript-tracing exporter — avoids the
+                           # torch.export/ProxyTorchDispatchMode reentrancy bug that
+                           # torch 2.5.x's new default Dynamo path hits after the
+                           # pruning + distillation training loop above.
+        )
     _emit(progress, phase="phase5", status="step_done", step="export", message="ONNX export complete.")
 
     accuracy_loss = round((original_score - compressed_score) * 100, 2) if task_type == "classification" else round(original_score - compressed_score, 4)
