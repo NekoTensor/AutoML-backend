@@ -7,6 +7,10 @@ numpy==1.26.4
 pandas==2.2.2
 scikit-learn==1.5.1
 
+# The Docker image installs this from https://download.pytorch.org/whl/cpu
+# first (see Dockerfile) — the Space has no GPU, and PyPI's default torch is
+# the CUDA build. Plain `pip install -r requirements.txt` locally still gets
+# whatever build is right for your machine.
 torch==2.5.1
 
 onnx==1.17.0
