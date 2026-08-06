@@ -20,7 +20,7 @@ pinned: false
 
 <br/>
 
-![NekoCortex Space running on Hugging Face](docs/screenshot-space-running.png)
+![NekoCortex Space running on Hugging Face](https://raw.githubusercontent.com/NekoTensor/Neko-Cortex-BackEnd/main/docs/screenshot-space-running.jpg)
 
 <br/>
 
