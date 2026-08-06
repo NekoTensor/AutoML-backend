@@ -10,9 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          lfs: true
 
       - name: Push to Hugging Face Space
         env:
@@ -20,5 +17,35 @@ jobs:
           HF_USERNAME: ${{ secrets.HF_USERNAME }}
           HF_SPACE_NAME: ${{ secrets.HF_SPACE_NAME }}
         run: |
-          git remote add space https://${HF_USERNAME}:${HF_TOKEN}@huggingface.co/spaces/${HF_USERNAME}/${HF_SPACE_NAME}
-          git push --force space main:main
+          set -euo pipefail
+
+          # The Space needs the current state of the code, not this repo's
+          # history — so send it a single orphan commit instead of mirroring
+          # main.
+          #
+          # This used to `git push --force space main:main` with a full
+          # fetch-depth-0 clone, which made HF's pre-receive hook scan every
+          # blob ever committed. HF requires binary files to be stored via
+          # LFS/Xet, so it rejected the push over three screenshots — two of
+          # which had already been deleted from the tree. Deleting a binary
+          # doesn't help when you're pushing the history that still contains
+          # it, so that sync could never succeed again on its own.
+          #
+          # An orphan commit has no parents, so there is no old history to
+          # scan and the problem cannot come back the next time an image is
+          # committed and removed.
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Documentation assets and CI config are for GitHub readers, not for
+          # the running Space — and they're exactly the binaries HF rejects.
+          # Dropping them keeps the Space lean and the push always accepted.
+          rm -rf docs .github
+
+          git checkout --orphan space-sync
+          git add -A
+          git commit -q -m "Sync from ${GITHUB_REPOSITORY}@${GITHUB_SHA}"
+
+          git remote add space "https://${HF_USERNAME}:${HF_TOKEN}@huggingface.co/spaces/${HF_USERNAME}/${HF_SPACE_NAME}"
+          git push --force space space-sync:main
