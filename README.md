@@ -39,7 +39,7 @@ Every phase streams live progress over a WebSocket (`/ws/run`) to the [frontend]
 ## Architecture
 
 ```
-app.py                       # FastAPI: /api/upload, /ws/run, download endpoints, CORS
+app.py                       # FastAPI: /api/upload, job registry, /ws/run + /ws/attach, cancel, downloads, CORS
 src/
 ├── orchestrator.py          # calls phases 1→5 in order, builds the final report + notebook
 ├── notebook_export.py       # packages one run into a self-contained .ipynb
@@ -52,6 +52,27 @@ src/
 ```
 
 Each phase is a single `run(..., progress=None)` function — `progress` is a callback invoked throughout with small JSON-serializable events, which `app.py` forwards straight to the browser over the websocket. `orchestrator.py` is the only file that knows all five phases exist; nothing else needs to change if you swap out one phase's internals for a heavier search strategy later.
+
+## Jobs outlive their websocket
+
+A run used to live entirely inside the websocket handler, which made the socket *be* the job: closing the tab orphaned a pipeline that kept burning CPU with nobody listening, and a reload could never get back to it. Runs are now owned by an in-process registry keyed by `job_id`, with the socket demoted to one of possibly-several subscribers. That single change is what makes two things expressible:
+
+| | |
+|---|---|
+| `WS /ws/run` | start a job and stream it |
+| `WS /ws/attach/{job_id}` | re-attach to a job already in flight |
+| `POST /api/cancel/{job_id}` | stop a running job |
+| `GET /api/job/{job_id}` | job status — `running`, `complete`, `error`, `cancelled`, or `unknown` |
+| `GET /health` | liveness probe, useful for waking a sleeping Space |
+
+- **Cancel** is cooperative: it sets a flag that the pipeline's `progress` callback checks, so the run unwinds at its next epoch or trial. There's no safe way to kill a thread mid-tensor-op, and every phase reports progress often enough that the delay is at most one trial.
+- **Resume** works because every event a job emits is kept in an ordered log. `/ws/attach/{job_id}` replays that log before following the run live, so a client that reloads mid-run re-attaches with nothing but the `job_id` and ends up in exactly the state it would have been in had it never disconnected.
+
+The registry is deliberately in-process and retains the most recent `MAX_RETAINED_JOBS` runs — this service already assumes a single worker, and a Redis-backed registry would be scaffolding for a scale it doesn't have.
+
+## This service is API-only
+
+`/` used to serve `static/index.html`, a complete second frontend written in vanilla JS. Maintaining two independent UIs for one product means they drift the moment either side changes — and the static one was already behind. The [Next.js app](https://github.com/NekoTensor/AutoML-Frontend) is now the only frontend; `/` redirects to it, and `FRONTEND_URL` overrides the target. `static/index.html` is kept as a reference and is no longer mounted.
 
 ## Setup (local)
 
