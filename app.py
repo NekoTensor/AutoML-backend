@@ -20,12 +20,15 @@ GET  /                       -> redirects to the frontend; this service is API-o
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
+import math
 import os
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
+import numpy as np
 import pandas as pd
 from fastapi import FastAPI, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -175,6 +178,43 @@ async def cancel_job(job_id: str):
     return {"job_id": job_id, "cancelled": True}
 
 
+def _json_safe(value):
+    """Coerce one pandas/numpy cell into something json.dumps will accept.
+
+    Starlette's JSONResponse serializes with allow_nan=False, so a single
+    NaN anywhere in the 5-row preview raises ValueError and the whole
+    upload 500s. Pandas produces NaN for any missing cell, which meant a
+    dataset as ordinary as Titanic — one blank Cabin in the first five
+    rows — could never get past the upload step, while a dataset with no
+    gaps worked fine. NaN and infinity have no JSON representation, so
+    they become null; the preview is for eyeballing, not for maths.
+    """
+    if value is None:
+        return None
+    # ndarray first: pd.isna() on an array returns an array, not a bool.
+    if isinstance(value, np.ndarray):
+        return [_json_safe(v) for v in value.tolist()]
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, (np.floating, float)):
+        as_float = float(value)
+        return as_float if math.isfinite(as_float) else None
+    if isinstance(value, np.bool_):
+        return bool(value)
+    if isinstance(value, (str, bool, int)):
+        return value
+    # Catches NaT and pd.NA, which aren't floats.
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, (pd.Timestamp, datetime.date, datetime.datetime)):
+        return value.isoformat()
+    # Decimal, Interval, Categorical values, anything else exotic.
+    return str(value)
+
+
 @app.post("/api/upload")
 async def upload_csv(file: UploadFile = File(...)):
     job_id = uuid.uuid4().hex[:10]
@@ -182,14 +222,39 @@ async def upload_csv(file: UploadFile = File(...)):
     with open(dest_path, "wb") as f:
         f.write(await file.read())
 
-    df = pd.read_csv(dest_path)
+    # A malformed or empty CSV is the user's problem to fix, not a server
+    # fault — report it as a 400 with the reason, so the UI can say what
+    # was wrong instead of showing a bare 500.
+    try:
+        df = pd.read_csv(dest_path)
+    except pd.errors.EmptyDataError:
+        return JSONResponse({"detail": "That file is empty."}, status_code=400)
+    except UnicodeDecodeError:
+        return JSONResponse(
+            {"detail": "That file isn't valid UTF-8 text — is it really a CSV?"},
+            status_code=400,
+        )
+    except pd.errors.ParserError as e:
+        return JSONResponse({"detail": f"Could not parse that CSV: {e}"}, status_code=400)
+
+    if df.empty or len(df.columns) == 0:
+        return JSONResponse({"detail": "That CSV has no rows to train on."}, status_code=400)
+
+    preview = [
+        {str(col): _json_safe(val) for col, val in row.items()}
+        for row in df.head(5).to_dict(orient="records")
+    ]
+
     return JSONResponse({
         "job_id": job_id,
         "filename": file.filename,
         "path": dest_path,
-        "columns": list(df.columns),
-        "rows": len(df),
-        "preview": df.head(5).to_dict(orient="records"),
+        # Column names go through str() too: a CSV whose header row is
+        # numeric gives pandas int64 column labels, which json.dumps can't
+        # serialize either.
+        "columns": [str(c) for c in df.columns],
+        "rows": int(len(df)),
+        "preview": preview,
     })
 
 
